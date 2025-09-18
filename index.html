@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>인천국제공항 여객주차장 현황</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+    header{padding:28px 18px;text-align:center}
+    h1{margin:0 0 6px}
+    p.lead{margin:0;color:#94a3b8}
+    main{max-width:960px;margin:0 auto;padding:18px}
+    .card{background:#111827;border:1px solid #1f2937;border-radius:16px;padding:18px}
+    .row{display:flex;gap:8px;align-items:center;margin:10px 0 12px}
+    button,input{height:40px;padding:0 12px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:#e2e8f0}
+    button{cursor:pointer;font-weight:600}
+    button:hover{filter:brightness(1.15)}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:10px;border-bottom:1px solid #1f2937}
+    td.num{text-align:right}
+    .muted{color:#94a3b8;font-size:14px}
+    .error{color:#fca5a5;font-size:14px;margin-top:8px}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>인천국제공항 여객주차장 현황</h1>
+    <p class="lead">공공데이터포털 API → Azure Functions 프록시 → 표</p>
+  </header>
+  <main>
+    <section class="card">
+      <div class="topbar">
+        <div class="row">
+          <button id="btn">새로고침</button>
+          <span id="status" class="muted">준비됨</span>
+        </div>
+        <div class="row">
+          <input id="q" type="text" placeholder="주차장 구분 검색 (T1/장기/단기 등)" />
+        </div>
+      </div>
+      <div id="err" class="error" hidden></div>
+      <div style="overflow:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>주차장 구분</th>
+              <th style="text-align:right">주차대수</th>
+              <th style="text-align:right">총 주차면수</th>
+              <th>업데이트시각</th>
+              <th style="text-align:right">주차율(%)</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    const btn = $('#btn'), statusEl = $('#status'), err = $('#err'), q = $('#q'), tbody = $('#tbody');
+    let rows = [];
+
+    const fmtN = n => new Intl.NumberFormat().format(n);
+    const fmtPct = v => (v*100).toFixed(1);
+    const fmtTime = s => {
+      const t = String(s||'').split('.')[0];
+      return t.length>=14 ? `${t.slice(0,4)}-${t.slice(4,6)}-${t.slice(6,8)} ${t.slice(8,10)}:${t.slice(10,12)}:${t.slice(12,14)}` : s||'';
+    };
+
+    function render() {
+      const keyword = (q.value||'').toLowerCase();
+      const filtered = rows.filter(r => !keyword || String(r.floor||'').toLowerCase().includes(keyword));
+      tbody.innerHTML = filtered.map(r => `
+        <tr>
+          <td>${r.floor||''}</td>
+          <td class="num">${fmtN(r.parking)}</td>
+          <td class="num">${fmtN(r.parkingarea)}</td>
+          <td>${fmtTime(r.datetm)}</td>
+          <td class="num">${fmtPct(r.rate)}</td>
+        </tr>
+      `).join('') || `<tr><td colspan="5" class="muted">검색 결과가 없습니다.</td></tr>`;
+    }
+
+    async function load() {
+      err.hidden = true; statusEl.textContent = '불러오는 중...'; tbody.innerHTML = '';
+      try {
+        const r = await fetch('/api/icn-parking?type=json&numOfRows=200');
+        if (!r.ok) throw new Error('HTTP '+r.status);
+        const data = await r.json();
+        rows = (data.rows||[]).map(v => ({...v, rate: v.parkingarea? (v.parking/v.parkingarea) : 0}))
+                              .sort((a,b)=>b.rate-a.rate);
+        render(); statusEl.textContent = `총 ${rows.length}건`;
+      } catch(e) {
+        err.hidden = false; err.textContent = '오류: '+e.message; statusEl.textContent = '오류';
+      }
+    }
+    btn.addEventListener('click', load);
+    q.addEventListener('input', render);
+  </script>
+</body>
+</html>
